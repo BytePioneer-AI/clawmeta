@@ -106,6 +106,24 @@ test("resolveRuntimeConfig applies agent overrides and keeps global defaults", (
   assert.equal(defaultConfig.defaultProvider, "volcengine");
 });
 
+test("isAgentEnabledForRuntime respects explicit disable and legacy agent overrides", () => {
+  assert.equal(__testing.isAgentEnabledForRuntime({
+    agents: {
+      "ding-main": {
+        enabled: false,
+      },
+    },
+  }, "ding-main"), false);
+
+  assert.equal(__testing.isAgentEnabledForRuntime({
+    agents: {
+      "ding-main": {
+        selectedCharacter: "brooke-anime",
+      },
+    },
+  }, "ding-main"), true);
+});
+
 test("resolveSoulMdPath prefers the current workspace", async () => {
   const workspaceDir = await makeTempDir("clawmate-workspace-");
   assert.equal(__testing.resolveSoulMdPath(workspaceDir), path.join(workspaceDir, "SOUL.md"));
@@ -128,6 +146,75 @@ test("before_agent_start injects SOUL.md into the active workspace", async () =>
   const soul = await fs.readFile(soulPath, "utf8");
   assert.match(soul, /CLAWMATE-COMPANION:PERSONA:BEGIN/);
   assert.match(soul, /ClawMate Companion Persona \(brooke\)/);
+});
+
+test("before_agent_start skips SOUL injection for agents without explicit config", async () => {
+  const workspaceDir = await makeTempDir("clawmate-soul-skip-");
+  await fs.writeFile(path.join(workspaceDir, "SOUL.md"), [
+    "<!-- CLAWMATE-COMPANION:PERSONA:BEGIN -->",
+    "## ClawMate Companion Persona (brooke)",
+    "",
+    "legacy persona",
+    "<!-- CLAWMATE-COMPANION:PERSONA:END -->",
+    "",
+    "keep me",
+  ].join("\n"), "utf8");
+  const plugin = createMockApi({
+    selectedCharacter: "brooke",
+    agents: {
+      "ding-main": {
+        enabled: true,
+      },
+    },
+  });
+
+  const hook = plugin.getHook("before_agent_start");
+  await hook({}, {
+    agentId: "ding-work",
+    workspaceDir,
+    sessionId: "session-1",
+  });
+
+  const soul = await fs.readFile(path.join(workspaceDir, "SOUL.md"), "utf8");
+  assert.doesNotMatch(soul, /CLAWMATE-COMPANION:PERSONA:BEGIN/);
+  assert.match(soul, /keep me/);
+});
+
+test("before_agent_start uses shared defaults for explicitly enabled agents", async () => {
+  const workspaceDir = await makeTempDir("clawmate-soul-enabled-");
+  const plugin = createMockApi({
+    selectedCharacter: "brooke-anime",
+    agents: {
+      "ding-main": {
+        enabled: true,
+      },
+    },
+  });
+
+  const hook = plugin.getHook("before_agent_start");
+  await hook({}, {
+    agentId: "ding-main",
+    workspaceDir,
+    sessionId: "session-1",
+  });
+
+  const soul = await fs.readFile(path.join(workspaceDir, "SOUL.md"), "utf8");
+  assert.match(soul, /ClawMate Companion Persona \(brooke-anime\)/);
+});
+
+test("tool factory returns no tools for agents without explicit config", () => {
+  const plugin = createMockApi({
+    selectedCharacter: "brooke",
+    agents: {
+      "ding-main": {
+        enabled: true,
+      },
+    },
+  });
+  const toolFactory = plugin.getToolFactory();
+
+  const tools = toolFactory({ agentId: "ding-work", sessionId: "session-b" });
+  assert.deepEqual(tools, []);
 });
 
 test("selfie prepare state is isolated per tool factory run", async () => {
