@@ -21,6 +21,7 @@ import type {
 } from "./core/types";
 
 interface PluginConfigOverrideInput {
+  enabled?: boolean;
   selectedCharacter?: string;
   characterRoot?: string;
   userCharacterRoot?: string;
@@ -312,6 +313,37 @@ async function ensurePersonaInjectedToSoul(
   const nextSoul = base ? `${base}\n\n${section}\n` : `${section}\n`;
   await fs.writeFile(soulPath, nextSoul, "utf8");
   logger.info("已将角色提示词注入 SOUL.md", { soulPath, characterId });
+}
+
+async function clearPersonaInjectedFromSoul(
+  logger: ReturnType<typeof createLogger>,
+  workspaceDir?: string,
+): Promise<void> {
+  const soulPath = resolveSoulMdPath(workspaceDir);
+
+  let currentSoul = "";
+  try {
+    currentSoul = await fs.readFile(soulPath, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+
+  const beginIdx = currentSoul.indexOf(SOUL_SECTION_BEGIN);
+  const endIdx = currentSoul.indexOf(SOUL_SECTION_END);
+  if (beginIdx === -1 || endIdx === -1 || endIdx < beginIdx) {
+    return;
+  }
+
+  const before = currentSoul.slice(0, beginIdx).trimEnd();
+  const after = currentSoul.slice(endIdx + SOUL_SECTION_END.length).trimStart();
+  const nextSoul = [before, after].filter(Boolean).join("\n\n");
+
+  await fs.writeFile(soulPath, nextSoul ? `${nextSoul}\n` : "", "utf8");
+  logger.info("已清理 SOUL.md 中的 ClawMate 提示词", { soulPath });
 }
 
 function shortRequestToken(requestId: string | null): string {
@@ -609,6 +641,52 @@ function resolveAgentOverride(
     : undefined;
 }
 
+function hasManagedAgentOverrideFields(value: unknown): boolean {
+  const config = toRecord(value);
+  return (
+    Object.prototype.hasOwnProperty.call(config, "selectedCharacter") ||
+    Object.prototype.hasOwnProperty.call(config, "characterRoot") ||
+    Object.prototype.hasOwnProperty.call(config, "userCharacterRoot") ||
+    Object.prototype.hasOwnProperty.call(config, "defaultProvider") ||
+    Object.prototype.hasOwnProperty.call(config, "fallback") ||
+    Object.prototype.hasOwnProperty.call(config, "retry") ||
+    Object.prototype.hasOwnProperty.call(config, "pollIntervalMs") ||
+    Object.prototype.hasOwnProperty.call(config, "pollTimeoutMs") ||
+    Object.prototype.hasOwnProperty.call(config, "degradeMessage") ||
+    Object.prototype.hasOwnProperty.call(config, "providers") ||
+    Object.prototype.hasOwnProperty.call(config, "proactiveSelfie")
+  );
+}
+
+function isAgentEnabledForRuntime(
+  pluginConfig: PluginConfigInput,
+  agentId?: string,
+): boolean {
+  const agents = toRecord(pluginConfig.agents);
+  if (Object.keys(agents).length === 0) {
+    return true;
+  }
+
+  const normalizedAgentId = agentId?.trim();
+  if (!normalizedAgentId) {
+    return false;
+  }
+
+  const agentConfig = toRecord(agents[normalizedAgentId]);
+  if (Object.keys(agentConfig).length === 0) {
+    return false;
+  }
+  if (agentConfig.enabled === false) {
+    return false;
+  }
+  if (agentConfig.enabled === true) {
+    return true;
+  }
+
+  // Backward compatibility for configs written before the explicit enable flag.
+  return hasManagedAgentOverrideFields(agentConfig);
+}
+
 function resolveRuntimeConfig(
   api: OpenClawPluginApiLike,
   scope: OpenClawRuntimeScopeLike = {},
@@ -701,6 +779,7 @@ export const __testing = {
   resolveRuntimeConfig,
   resolveSoulMdPath,
   buildSessionStateKey,
+  isAgentEnabledForRuntime,
 };
 
 async function formatResult(result: GenerateSelfieResult, logger: ReturnType<typeof createLogger>): Promise<string> {
@@ -761,6 +840,11 @@ export default function registerClawMateCompanion(api: OpenClawPluginApiLike): v
   // 注册阶段仅同步注册 Hook/Tool，不执行异步初始化。
   api.on("before_agent_start", async (_event, ctx) => {
     try {
+      const pluginConfig = toRecord(api.pluginConfig) as PluginConfigInput;
+      if (!isAgentEnabledForRuntime(pluginConfig, ctx.agentId)) {
+        await clearPersonaInjectedFromSoul(logger, ctx.workspaceDir);
+        return;
+      }
       const config = resolveRuntimeConfig(api, ctx);
       const character = await loadCharacterAssets({
         characterId: config.selectedCharacter,
@@ -813,6 +897,11 @@ export default function registerClawMateCompanion(api: OpenClawPluginApiLike): v
   });
 
   api.registerTool((ctx) => {
+    const pluginConfig = toRecord(api.pluginConfig) as PluginConfigInput;
+    if (!isAgentEnabledForRuntime(pluginConfig, ctx?.agentId)) {
+      return [];
+    }
+
     let prepareCalled = false;
     const toolScope = ctx ?? {};
     const getConfig = () => resolveRuntimeConfig(api, toolScope);

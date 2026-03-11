@@ -16,19 +16,46 @@ test("normalizeAgents keeps unique ids and sorts default agent first", () => {
   ]);
 });
 
-test("buildConfigTargetMenu only shows finish option after at least one scope was configured", () => {
-  const agents = [
-    { id: "ding-main", workspace: "C:\\main", routes: [], bindings: undefined, isDefault: true },
-    { id: "ding-work", workspace: "C:\\work", routes: [], bindings: undefined, isDefault: false },
-  ];
+test("hasConfiguredScopes counts shared defaults and agent enable/disable states", () => {
+  assert.equal(__testing.hasConfiguredScopes({}), false);
+  assert.equal(__testing.hasConfiguredScopes({
+    selectedCharacter: "brooke-anime",
+  }), true);
+  assert.equal(__testing.hasConfiguredScopes({
+    agents: {
+      "ding-main": {
+        enabled: true,
+      },
+    },
+  }), true);
+  assert.equal(__testing.hasConfiguredScopes({
+    agents: {
+      "ding-main": {
+        selectedCharacter: "brooke-anime",
+      },
+    },
+  }), true);
+  assert.equal(__testing.hasConfiguredScopes({
+    agents: {
+      "ding-main": {
+        enabled: false,
+      },
+    },
+  }), true);
+});
 
-  const initialMenu = __testing.buildConfigTargetMenu(agents, {}, false);
-  assert.equal(initialMenu.values[0]?.type, "shared");
-  assert.equal(initialMenu.values.at(-1)?.type, "agent");
-
-  const followupMenu = __testing.buildConfigTargetMenu(agents, {}, true);
-  assert.equal(followupMenu.values[0]?.type, "finish");
-  assert.equal(followupMenu.values[1]?.type, "shared");
+test("hasConfiguredAgentScopes ignores shared defaults and only counts agent entries", () => {
+  assert.equal(__testing.hasConfiguredAgentScopes({}), false);
+  assert.equal(__testing.hasConfiguredAgentScopes({
+    selectedCharacter: "brooke-anime",
+  }), false);
+  assert.equal(__testing.hasConfiguredAgentScopes({
+    agents: {
+      "ding-main": {
+        enabled: true,
+      },
+    },
+  }), true);
 });
 
 test("buildConfigTargetMenu marks configured agent overrides", () => {
@@ -46,8 +73,71 @@ test("buildConfigTargetMenu marks configured agent overrides", () => {
   }, true);
 
   assert.match(menu.items[1], /已配置|configured/);
-  assert.match(menu.items[2], /已配置|configured/);
+  assert.match(menu.items[2], /\[(已配置|configured)\]/);
+  assert.match(menu.items[2], /\[(已启用|enabled)\]/);
   assert.equal(menu.values[2]?.agentId, "ding-main");
+});
+
+test("buildConfigTargetMenu shows disabled status for stopped agents", () => {
+  const agents = [
+    { id: "ding-main", workspace: "C:\\main", routes: [], bindings: undefined, isDefault: true },
+  ];
+
+  const menu = __testing.buildConfigTargetMenu(agents, {
+    agents: {
+      "ding-main": {
+        enabled: false,
+      },
+    },
+  }, true);
+
+  assert.match(menu.items[2], /\[(已配置|configured)\]/);
+  assert.match(menu.items[2], /\[(已停用|stopped)\]/);
+});
+
+test("buildConfigTargetMenu hides shared target when multiple agents exist", () => {
+  const agents = [
+    { id: "ding-main", workspace: "C:\\main", routes: [], bindings: undefined, isDefault: true },
+    { id: "ding-work", workspace: "C:\\work", routes: [], bindings: undefined, isDefault: false },
+  ];
+
+  const menu = __testing.buildConfigTargetMenu(agents, {
+    selectedCharacter: "brooke",
+    agents: {
+      "ding-main": {
+        enabled: true,
+      },
+    },
+  }, true);
+
+  assert.equal(menu.values[0]?.type, "finish");
+  assert.equal(menu.values[1]?.type, "agent");
+  assert.equal(menu.values[2]?.type, "agent");
+  assert.equal(menu.values.some((item) => item.type === "shared"), false);
+});
+
+test("buildConfigTargetDetails only shows the selected agent details", () => {
+  const agents = [
+    {
+      id: "ding-main",
+      workspace: "C:\\main",
+      routes: ["default (no explicit rules)"],
+      bindings: 1,
+      isDefault: true,
+    },
+    {
+      id: "ding-work",
+      workspace: "C:\\work",
+      routes: [],
+      bindings: 1,
+      isDefault: false,
+    },
+  ];
+
+  const details = __testing.buildConfigTargetDetails(agents, { type: "agent", agentId: "ding-work" });
+  assert.equal(details.some((line) => /ding-work/.test(line)), true);
+  assert.equal(details.some((line) => /ding-main/.test(line)), false);
+  assert.equal(details.some((line) => /工作区|Workspace/.test(line)), true);
 });
 
 test("resolveScopeSettings marks shared fields as unconfigured on fresh install", () => {
@@ -190,6 +280,7 @@ test("buildPluginConfig updates only the selected agent overrides", () => {
       note: "keep-main",
     },
     "ding-work": {
+      enabled: true,
       selectedCharacter: "brooke-anime",
       defaultProvider: "fal",
       proactiveSelfie: { enabled: true, probability: 0.2 },
@@ -216,6 +307,7 @@ test("buildPluginConfig writes explicit agent overrides even when they match sha
 
   assert.deepEqual(result.agents, {
     "ding-main": {
+      enabled: true,
       selectedCharacter: "brooke",
       defaultProvider: "openai-compatible",
       proactiveSelfie: { enabled: false, probability: 0.1 },
@@ -247,7 +339,55 @@ test("buildPluginConfig can clear a selected agent override back to shared setti
 
   assert.deepEqual(result.agents, {
     main: {
+      enabled: true,
       note: "keep-me",
+    },
+  });
+});
+
+test("buildPluginConfig keeps an agent explicitly enabled even when it inherits all shared settings", () => {
+  const result = __testing.buildPluginConfig({
+    selectedCharacter: "brooke",
+    defaultProvider: "openai-compatible",
+    proactiveSelfie: { enabled: false, probability: 0.1 },
+  }, {
+    scope: { type: "agent", agentId: "ding-main" },
+    characterSelection: { mode: "inherit" },
+    proactiveSelection: { mode: "inherit" },
+    providerSelection: { mode: "inherit" },
+    providerConfigs: {},
+    defaultUserCharacterRoot: "C:\\Users\\tester\\.openclaw\\clawmeta",
+  });
+
+  assert.deepEqual(result.agents, {
+    "ding-main": {
+      enabled: true,
+    },
+  });
+});
+
+test("buildPluginConfig can explicitly disable an agent and keep prior overrides", () => {
+  const result = __testing.buildPluginConfig({
+    selectedCharacter: "brooke",
+    defaultProvider: "openai-compatible",
+    proactiveSelfie: { enabled: false, probability: 0.1 },
+    agents: {
+      "ding-main": {
+        enabled: true,
+        selectedCharacter: "brooke-anime",
+      },
+    },
+  }, {
+    scope: { type: "agent", agentId: "ding-main" },
+    activationSelection: { mode: "disable" },
+    providerConfigs: {},
+    defaultUserCharacterRoot: "C:\\Users\\tester\\.openclaw\\clawmeta",
+  });
+
+  assert.deepEqual(result.agents, {
+    "ding-main": {
+      enabled: false,
+      selectedCharacter: "brooke-anime",
     },
   });
 });

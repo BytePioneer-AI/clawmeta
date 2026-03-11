@@ -70,6 +70,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "enabled": { "type": "boolean" },
             "selectedCharacter": { "type": "string" },
             "characterRoot": { "type": "string" },
             "userCharacterRoot": { "type": "string" },

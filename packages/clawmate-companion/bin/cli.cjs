@@ -84,6 +84,7 @@ const T = {
     step_env: "检查环境...",
     step_agents: "检测 Agent...",
     step_target: "选择配置目标...",
+    step_agent_status: "设置 Agent 开关...",
     step_character: "选择角色...",
     step_proactive: "配置主动发图...",
     proactive_enable: "主动发图：若溪会在日常聊天中随机发自拍表示关心",
@@ -146,12 +147,20 @@ const T = {
     agent_workspace: "工作区",
     multi_agent_intro: "检测到多个 Agent，可为每个 Agent 设置独立角色和图像服务。",
     choose_target: "选择要配置的 Agent 或共享默认配置",
+    choose_agent_only: "选择要配置的 Agent",
     target_shared: "配置共享默认值",
+    target_agent_details: "当前 Agent",
     target_agent_prefix: "单独配置 Agent",
     selected_target: "配置目标",
     target_done: "完成配置并安装",
     target_configured_tag: "已配置",
-    target_shared_desc: "未单独配置的 Agent 会继承这里的默认值",
+    target_enabled_tag: "已启用",
+    target_disabled_tag: "已停用",
+    target_shared_desc: "这里只设置共享默认值；只有单独确认过的 Agent 才会启用 ClawMate",
+    agent_enable: "启用 ClawMate",
+    agent_disable: "停止 ClawMate",
+    agent_enabled_done: "该 Agent 已启用 ClawMate",
+    agent_disabled_done: "该 Agent 已停止 ClawMate",
     clear_shared_character: "清除共享角色（回退到内置默认）",
     clear_shared_provider: "清除共享图像服务（回退到 Mock）",
     clear_shared_proactive: "清除共享主动发图设置",
@@ -196,6 +205,7 @@ const T = {
     step_env: "Checking environment...",
     step_agents: "Detecting agents...",
     step_target: "Choose config target...",
+    step_agent_status: "Set agent status...",
     step_character: "Select character...",
     step_proactive: "Configure proactive selfie...",
     proactive_enable: "Proactive selfie: character will randomly send selfies during chat",
@@ -258,12 +268,20 @@ const T = {
     agent_workspace: "Workspace",
     multi_agent_intro: "Multiple agents detected. You can assign a separate character and provider to each one.",
     choose_target: "Choose an agent or the shared default configuration",
+    choose_agent_only: "Choose an agent to configure",
     target_shared: "Configure shared defaults",
+    target_agent_details: "Current Agent",
     target_agent_prefix: "Configure agent",
     selected_target: "Config target",
     target_done: "Finish and install",
     target_configured_tag: "configured",
-    target_shared_desc: "Agents without overrides will inherit these defaults",
+    target_enabled_tag: "enabled",
+    target_disabled_tag: "stopped",
+    target_shared_desc: "Shared defaults only define fallback values; ClawMate activates only for agents you confirm individually",
+    agent_enable: "Enable ClawMate",
+    agent_disable: "Stop ClawMate",
+    agent_enabled_done: "ClawMate enabled for this agent",
+    agent_disabled_done: "ClawMate stopped for this agent",
     clear_shared_character: "Clear shared character (use built-in default)",
     clear_shared_provider: "Clear shared image service (fall back to Mock)",
     clear_shared_proactive: "Clear shared proactive selfie setting",
@@ -423,28 +441,39 @@ function ask(question) {
  * Arrow-key interactive select menu.
  * Returns the index of the selected item.
  */
-function arrowSelect(items, { title = "", initialIndex = 0 } = {}) {
+function arrowSelect(items, { title = "", initialIndex = 0, detailsRenderer = null } = {}) {
   return new Promise((resolve) => {
     let cursor = Math.max(0, Math.min(initialIndex, items.length - 1));
     const { stdin, stdout } = process;
+    let renderedLineCount = 0;
 
-    function render() {
-      // Move up to clear previous render (except first time)
-      stdout.write(`\x1b[${items.length}A`);
+    function renderFrame() {
+      const lines = [];
+      if (title) {
+        lines.push(title);
+      }
       for (let i = 0; i < items.length; i++) {
         const prefix = i === cursor ? c("cyan", " ❯ ") : "   ";
         const label = i === cursor ? c("bright", items[i]) : c("dim", items[i]);
-        stdout.write(`\x1b[2K${prefix}${label}\n`);
+        lines.push(`${prefix}${label}`);
       }
-    }
 
-    function firstRender() {
-      if (title) stdout.write(`${title}\n`);
-      for (let i = 0; i < items.length; i++) {
-        const prefix = i === cursor ? c("cyan", " ❯ ") : "   ";
-        const label = i === cursor ? c("bright", items[i]) : c("dim", items[i]);
-        stdout.write(`${prefix}${label}\n`);
+      if (typeof detailsRenderer === "function") {
+        const detailLines = detailsRenderer(cursor);
+        if (Array.isArray(detailLines) && detailLines.length > 0) {
+          lines.push(...detailLines.map((line) => String(line)));
+        }
       }
+
+      if (renderedLineCount > 0) {
+        stdout.write(`\x1b[${renderedLineCount}A`);
+      }
+
+      const linesToRender = Math.max(renderedLineCount, lines.length);
+      for (let i = 0; i < linesToRender; i++) {
+        stdout.write(`\x1b[2K${lines[i] ?? ""}\n`);
+      }
+      renderedLineCount = linesToRender;
     }
 
     function cleanup() {
@@ -458,12 +487,12 @@ function arrowSelect(items, { title = "", initialIndex = 0 } = {}) {
       // Up arrow: \x1b[A
       if (key === "\x1b[A" || key === "k") {
         cursor = (cursor - 1 + items.length) % items.length;
-        render();
+        renderFrame();
       }
       // Down arrow: \x1b[B
       else if (key === "\x1b[B" || key === "j") {
         cursor = (cursor + 1) % items.length;
-        render();
+        renderFrame();
       }
       // Enter
       else if (key === "\r" || key === "\n") {
@@ -477,7 +506,7 @@ function arrowSelect(items, { title = "", initialIndex = 0 } = {}) {
       }
     }
 
-    firstRender();
+    renderFrame();
     stdin.setRawMode(true);
     stdin.resume();
     stdin.on("data", onKey);
@@ -529,6 +558,11 @@ function toRecord(value) {
 function readExistingPluginConfig() {
   const config = readJsonFile(OPENCLAW_CONFIG);
   return config?.plugins?.entries?.[PLUGIN_ID]?.config || null;
+}
+
+function hasExistingPluginEntry() {
+  const config = readJsonFile(OPENCLAW_CONFIG);
+  return isPlainObject(config?.plugins?.entries?.[PLUGIN_ID]);
 }
 
 function runJsonCommand(command, timeout = 15000) {
@@ -757,45 +791,103 @@ function getScopeTargetLabel(scope) {
   return scope?.type === "agent" ? `${t("target_agent_prefix")}: ${scope.agentId}` : t("target_shared");
 }
 
+function hasSharedScopeConfig(pluginConfig) {
+  const existing = toRecord(pluginConfig);
+  return (
+    (typeof existing.selectedCharacter === "string" && existing.selectedCharacter.trim()) ||
+    (typeof existing.defaultProvider === "string" && existing.defaultProvider.trim()) ||
+    existing.proactiveSelfie !== undefined
+  );
+}
+
 function hasManagedAgentOverrides(agentConfig) {
   const config = toRecord(agentConfig);
   return (
+    Object.prototype.hasOwnProperty.call(config, "enabled") ||
     Object.prototype.hasOwnProperty.call(config, "selectedCharacter") ||
+    Object.prototype.hasOwnProperty.call(config, "characterRoot") ||
+    Object.prototype.hasOwnProperty.call(config, "userCharacterRoot") ||
     Object.prototype.hasOwnProperty.call(config, "defaultProvider") ||
+    Object.prototype.hasOwnProperty.call(config, "fallback") ||
+    Object.prototype.hasOwnProperty.call(config, "retry") ||
+    Object.prototype.hasOwnProperty.call(config, "pollIntervalMs") ||
+    Object.prototype.hasOwnProperty.call(config, "pollTimeoutMs") ||
+    Object.prototype.hasOwnProperty.call(config, "degradeMessage") ||
+    Object.prototype.hasOwnProperty.call(config, "providers") ||
     Object.prototype.hasOwnProperty.call(config, "proactiveSelfie")
   );
 }
 
+function isManagedAgentEnabled(agentConfig) {
+  const config = toRecord(agentConfig);
+  if (!hasManagedAgentOverrides(config)) {
+    return false;
+  }
+  return config.enabled !== false;
+}
+
+function hasConfiguredScopes(pluginConfig) {
+  if (hasSharedScopeConfig(pluginConfig)) {
+    return true;
+  }
+  return Object.values(toRecord(toRecord(pluginConfig).agents)).some((agentConfig) => hasManagedAgentOverrides(agentConfig));
+}
+
+function hasConfiguredAgentScopes(pluginConfig) {
+  return Object.values(toRecord(toRecord(pluginConfig).agents)).some((agentConfig) => hasManagedAgentOverrides(agentConfig));
+}
+
 function buildConfigTargetMenu(agents, pluginConfig, allowFinish = false) {
   const existing = toRecord(pluginConfig);
-  const sharedConfigured = (
-    typeof existing.selectedCharacter === "string" && existing.selectedCharacter.trim()
-  ) || (
-    typeof existing.defaultProvider === "string" && existing.defaultProvider.trim()
-  ) || existing.proactiveSelfie !== undefined;
+  const includeSharedTarget = !Array.isArray(agents) || agents.length <= 1;
+  const sharedConfigured = hasSharedScopeConfig(existing);
 
   const items = [];
   const values = [];
 
   if (allowFinish) {
-    items.push(c("dim", t("target_done")));
+    items.push(c("green", t("target_done")));
     values.push({ type: "finish" });
   }
 
-  const sharedLabel = sharedConfigured
-    ? `${t("target_shared")} ${c("dim", `[${t("target_configured_tag")}]`)}`
-    : t("target_shared");
-  items.push(sharedLabel);
-  values.push({ type: "shared" });
+  if (includeSharedTarget) {
+    const sharedLabel = sharedConfigured
+      ? `${t("target_shared")} ${c("dim", `[${t("target_configured_tag")}]`)}`
+      : t("target_shared");
+    items.push(sharedLabel);
+    values.push({ type: "shared" });
+  }
 
   for (const agent of agents) {
-    const hasOverride = hasManagedAgentOverrides(toRecord(toRecord(existing.agents)[agent.id]));
-    const configuredTag = hasOverride ? ` ${c("dim", `[${t("target_configured_tag")}]`)}` : "";
+    const agentConfig = toRecord(toRecord(existing.agents)[agent.id]);
+    const hasOverride = hasManagedAgentOverrides(agentConfig);
+    const configuredTag = hasOverride
+      ? ` ${c("dim", `[${t("target_configured_tag")}]`)} ${c("dim", `[${isManagedAgentEnabled(agentConfig) ? t("target_enabled_tag") : t("target_disabled_tag")}]`)}`
+      : "";
     items.push(`${t("target_agent_prefix")}: ${agent.id}${configuredTag}`);
     values.push({ type: "agent", agentId: agent.id });
   }
 
   return { items, values };
+}
+
+function buildConfigTargetDetails(agents, selection) {
+  if (!selection || selection.type !== "agent") {
+    return [];
+  }
+
+  const agent = Array.isArray(agents) ? agents.find((item) => item.id === selection.agentId) : null;
+  if (!agent) {
+    return [];
+  }
+
+  const [header, ...rest] = formatAgentSummary(agent);
+  return [
+    "",
+    `  ${c("cyan", `${t("target_agent_details")}:`)}`,
+    `  ${header}`,
+    ...rest,
+  ];
 }
 
 function getSharedScopeDefaults(pluginConfig) {
@@ -851,6 +943,8 @@ function resolveScopeSettings(pluginConfig, scope) {
         ? normalizeProactiveSelfieConfig(agentConfig.proactiveSelfie)
         : shared.proactiveSelfie,
     shared,
+    agentConfigured: hasManagedAgentOverrides(agentConfig),
+    agentEnabled: isManagedAgentEnabled(agentConfig),
     overrides: agentConfig,
   };
 }
@@ -962,18 +1056,10 @@ async function checkPrerequisites() {
   }
   logSuccess(t("dir_ok"));
 
-  // Check if plugin already linked
-  try {
-    const result = execSync("openclaw plugins list", {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    if (result.includes(PLUGIN_ID)) {
-      logWarn(t("already_installed"));
-      return "already_installed";
-    }
-  } catch {
-    // plugins list command may not exist, continue
+  // Fast local check: avoid the slower `openclaw plugins list` startup cost.
+  if (hasExistingPluginEntry()) {
+    logWarn(t("already_installed"));
+    return "already_installed";
   }
 
   return true;
@@ -1031,20 +1117,13 @@ async function chooseConfigTarget(agents, pluginConfig, options = {}) {
   }
 
   logStep("2/6", t("step_target"));
-  logInfo(t("choose_target"));
-  logInfo(t("target_shared_desc"));
-  for (const agent of agents) {
-    const [header, ...rest] = formatAgentSummary(agent);
-    log(`  ${header}`);
-    for (const line of rest) {
-      log(line);
-    }
-  }
+  logInfo(t("choose_agent_only"));
 
   const menu = buildConfigTargetMenu(agents, pluginConfig, options.allowFinish);
   const selectedIndex = await arrowSelect(menu.items, {
     title: `  ${c("dim", t("arrow_hint"))}`,
-    initialIndex: 0,
+    initialIndex: menu.values[0]?.type === "finish" ? 1 : 0,
+    detailsRenderer: (index) => buildConfigTargetDetails(agents, menu.values[index]),
   });
 
   const selected = menu.values[selectedIndex] || { type: "finish" };
@@ -1059,6 +1138,37 @@ async function chooseConfigTarget(agents, pluginConfig, options = {}) {
 
   logSuccess(t("target_done"));
   return selected;
+}
+
+async function chooseAgentActivation(scope, settings) {
+  if (scope?.type !== "agent") {
+    return null;
+  }
+
+  if (!settings.agentConfigured) {
+    return { mode: "enable" };
+  }
+
+  logStep("2.5/6", t("step_agent_status"));
+
+  const items = [
+    `${t("agent_enable")}${settings.agentEnabled ? currentTag() : ""}`,
+    `${t("agent_disable")}${!settings.agentEnabled ? currentTag() : ""}`,
+  ];
+  const values = [{ mode: "enable" }, { mode: "disable" }];
+
+  const selectedIndex = await arrowSelect(items, {
+    title: `  ${c("dim", t("arrow_hint"))}`,
+    initialIndex: settings.agentEnabled ? 0 : 1,
+  });
+
+  const selection = values[selectedIndex] || { mode: "enable" };
+  if (selection.mode === "disable") {
+    logSuccess(t("agent_disabled_done"));
+  } else {
+    logSuccess(t("agent_enabled_done"));
+  }
+  return selection;
 }
 
 async function chooseCharacterSelection(scope, settings) {
@@ -1437,6 +1547,7 @@ function buildPluginConfig(existingConfig, options) {
   if (options.scope?.type === "agent") {
     const nextAgents = { ...toRecord(existing.agents) };
     const currentOverride = { ...toRecord(nextAgents[options.scope.agentId]) };
+    currentOverride.enabled = options.activationSelection?.mode === "disable" ? false : true;
 
     if (options.characterSelection?.mode === "inherit") {
       delete currentOverride.selectedCharacter;
@@ -1590,14 +1701,30 @@ async function main() {
       : null;
 
     while (true) {
+      const allowFinish =
+        !Array.isArray(discoveredAgents) ||
+        discoveredAgents.length <= 1 ||
+        hasConfiguredAgentScopes(workingConfig);
       const scope = await chooseConfigTarget(discoveredAgents, workingConfig, {
-        allowFinish: lastConfiguredScope !== null,
+        allowFinish,
       });
       if (scope.type === "finish") {
         break;
       }
 
       const settings = resolveScopeSettings(workingConfig, scope);
+      const activationSelection = await chooseAgentActivation(scope, settings);
+      if (activationSelection?.mode === "disable") {
+        workingConfig = buildPluginConfig(workingConfig, {
+          scope,
+          activationSelection,
+          providerConfigs: {},
+          defaultUserCharacterRoot: path.join(OPENCLAW_HOME, "clawmeta"),
+        });
+        lastConfiguredScope = scope;
+        continue;
+      }
+
       const characterSelection = await chooseCharacterSelection(scope, settings);
       const proactiveSelection = await configureProactiveSelfieSelection(scope, settings);
       const providerResult = await chooseProviderSelection(scope, workingConfig, settings);
@@ -1607,6 +1734,7 @@ async function main() {
 
       workingConfig = buildPluginConfig(workingConfig, {
         scope,
+        activationSelection,
         characterSelection,
         proactiveSelection,
         providerSelection: providerResult.selection,
@@ -1639,6 +1767,9 @@ module.exports = {
   __testing: {
     buildPluginConfig,
     buildConfigTargetMenu,
+    buildConfigTargetDetails,
+    hasConfiguredAgentScopes,
+    hasConfiguredScopes,
     normalizeAgents,
     resolveScopeSettings,
   },
