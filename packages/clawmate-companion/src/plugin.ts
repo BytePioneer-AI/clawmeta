@@ -5,11 +5,20 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { generateSelfie } from "./core/pipeline";
 import { prepareSelfie } from "./core/prepare";
+import { generateTts } from "./core/tts";
 import { loadCharacterAssets, listCharacters } from "./core/characters";
 import { createCharacter } from "./core/character-creator";
 import { createLogger } from "./core/logger";
 import { normalizeConfig, defaultUserCharacterRoot } from "./core/config";
-import type { ClawMateConfig, CreateCharacterInput, GenerateSelfieFailure, GenerateSelfieResult, SelfieMode } from "./core/types";
+import type {
+  ClawMateConfig,
+  CreateCharacterInput,
+  GenerateSelfieFailure,
+  GenerateSelfieResult,
+  GenerateTtsFailure,
+  GenerateTtsResult,
+  SelfieMode,
+} from "./core/types";
 
 interface PluginConfigOverrideInput {
   selectedCharacter?: string;
@@ -23,6 +32,15 @@ interface PluginConfigOverrideInput {
   degradeMessage?: string;
   providers?: Record<string, unknown>;
   proactiveSelfie?: { enabled?: boolean; probability?: number };
+  tts?: {
+    enabled?: boolean;
+    model?: string;
+    voice?: string;
+    languageType?: string;
+    apiKeyEnv?: string;
+    baseUrl?: string;
+    degradeMessage?: string;
+  };
 }
 
 interface PluginConfigInput extends PluginConfigOverrideInput {
@@ -40,6 +58,7 @@ interface PrepareParams {
 interface ToolParams {
   prompt?: string;
   mode?: SelfieMode;
+  text?: string;
 }
 
 interface OpenClawRuntimeScopeLike {
@@ -101,10 +120,12 @@ interface CharacterPrepareSessionState {
 }
 
 const DATA_URL_PATTERN = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i;
+const AUDIO_DATA_URL_PATTERN = /^data:(audio\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i;
 const HTTP_URL_PATTERN = /^https?:\/\//i;
 const RAW_BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const URL_FILE_EXT_PATTERN = /^\.[a-zA-Z0-9]{1,8}$/;
 const MIME_IMAGE_PATTERN = /^image\/[a-zA-Z0-9.+-]+$/i;
+const MIME_AUDIO_PATTERN = /^audio\/[a-zA-Z0-9.+-]+$/i;
 const SOUL_SECTION_BEGIN = "<!-- CLAWMATE-COMPANION:PERSONA:BEGIN -->";
 const SOUL_SECTION_END = "<!-- CLAWMATE-COMPANION:PERSONA:END -->";
 
@@ -141,6 +162,42 @@ function detectImageMimeFromBase64(base64: string): string {
   return "image/png";
 }
 
+function audioFileExtByMime(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === "audio/wav" || normalized === "audio/x-wav") {
+    return "wav";
+  }
+  if (normalized === "audio/mpeg" || normalized === "audio/mp3") {
+    return "mp3";
+  }
+  if (normalized === "audio/ogg") {
+    return "ogg";
+  }
+  if (normalized === "audio/aac") {
+    return "aac";
+  }
+  if (normalized === "audio/flac") {
+    return "flac";
+  }
+  if (normalized === "audio/mp4" || normalized === "audio/x-m4a") {
+    return "m4a";
+  }
+  return "wav";
+}
+
+function detectAudioMimeFromBase64(base64: string): string {
+  if (base64.startsWith("UklGR")) {
+    return "audio/wav";
+  }
+  if (base64.startsWith("SUQz") || base64.startsWith("/+MY")) {
+    return "audio/mpeg";
+  }
+  if (base64.startsWith("T2dnUw")) {
+    return "audio/ogg";
+  }
+  return "audio/wav";
+}
+
 function normalizeRawBase64(text: string): string {
   return text.replace(/\s+/g, "").replace(/^[("'\s]+|[)"'\s]+$/g, "");
 }
@@ -161,6 +218,12 @@ function resolveGeneratedImageDir(now = new Date()): string {
   const openClawHome = process.env.OPENCLAW_HOME?.trim() || path.join(os.homedir(), ".openclaw");
   const day = now.toISOString().slice(0, 10);
   return path.join(openClawHome, "media", "clawmate-generated", day);
+}
+
+function resolveGeneratedAudioDir(now = new Date()): string {
+  const openClawHome = process.env.OPENCLAW_HOME?.trim() || path.join(os.homedir(), ".openclaw");
+  const day = now.toISOString().slice(0, 10);
+  return path.join(openClawHome, "media", "clawmate-voice", day);
 }
 
 function resolveSoulMdPath(workspaceDir?: string): string {
@@ -267,6 +330,15 @@ function buildLocalImagePath(requestId: string | null, extWithDot: string): stri
   return path.join(tempDir, fileName);
 }
 
+function buildLocalAudioPath(requestId: string | null, extWithDot: string): string {
+  const tempDir = resolveGeneratedAudioDir();
+  const safeExt = sanitizeExt(extWithDot);
+  const token = shortRequestToken(requestId);
+  const ts = Date.now().toString(36);
+  const fileName = `clawmate-voice-${ts}-${token}${safeExt}`;
+  return path.join(tempDir, fileName);
+}
+
 function resolveExistingLocalPath(imageRef: string): string | null {
   const trimmed = imageRef.trim();
   if (!trimmed) return null;
@@ -305,6 +377,20 @@ async function persistDataUrlImage(imageUrl: string, requestId: string | null): 
   return filePath;
 }
 
+async function persistDataUrlAudio(audioUrl: string, requestId: string | null): Promise<string> {
+  const matched = audioUrl.match(AUDIO_DATA_URL_PATTERN);
+  if (!matched) {
+    throw new Error("not a data URL audio");
+  }
+
+  const [, mimeType, base64Data] = matched;
+  const ext = audioFileExtByMime(mimeType);
+  const filePath = buildLocalAudioPath(requestId, `.${ext}`);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, Buffer.from(base64Data, "base64"));
+  return filePath;
+}
+
 async function persistRawBase64Image(imageBase64: string, requestId: string | null): Promise<string> {
   const normalized = normalizeRawBase64(imageBase64);
   if (!isLikelyRawBase64(normalized)) {
@@ -313,6 +399,19 @@ async function persistRawBase64Image(imageBase64: string, requestId: string | nu
   const mimeType = detectImageMimeFromBase64(normalized);
   const ext = fileExtByMime(mimeType);
   const filePath = buildLocalImagePath(requestId, `.${ext}`);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, Buffer.from(normalized, "base64"));
+  return filePath;
+}
+
+async function persistRawBase64Audio(audioBase64: string, requestId: string | null): Promise<string> {
+  const normalized = normalizeRawBase64(audioBase64);
+  if (!isLikelyRawBase64(normalized)) {
+    throw new Error("not a raw base64 audio");
+  }
+  const mimeType = detectAudioMimeFromBase64(normalized);
+  const ext = audioFileExtByMime(mimeType);
+  const filePath = buildLocalAudioPath(requestId, `.${ext}`);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, Buffer.from(normalized, "base64"));
   return filePath;
@@ -332,6 +431,26 @@ async function persistRemoteImage(imageUrl: string, requestId: string | null): P
     ext = path.extname(pathname) || ".img";
   }
   const filePath = buildLocalImagePath(requestId, ext || ".img");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const data = Buffer.from(await response.arrayBuffer());
+  await fs.writeFile(filePath, data);
+  return filePath;
+}
+
+async function persistRemoteAudio(audioUrl: string, requestId: string | null): Promise<string> {
+  const response = await fetch(audioUrl);
+  if (!response.ok) {
+    throw new Error(`download audio failed: HTTP ${response.status}`);
+  }
+  const contentType = response.headers.get("content-type")?.trim().toLowerCase() ?? "";
+  let ext = "";
+  if (MIME_AUDIO_PATTERN.test(contentType)) {
+    ext = `.${audioFileExtByMime(contentType)}`;
+  } else {
+    const pathname = new URL(audioUrl).pathname;
+    ext = path.extname(pathname) || ".wav";
+  }
+  const filePath = buildLocalAudioPath(requestId, ext || ".wav");
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const data = Buffer.from(await response.arrayBuffer());
   await fs.writeFile(filePath, data);
@@ -363,6 +482,33 @@ async function persistImageToLocal(imageRef: string, requestId: string | null): 
   }
 
   throw new Error("unsupported image reference format");
+}
+
+async function persistAudioToLocal(audioRef: string, requestId: string | null): Promise<string> {
+  const trimmed = audioRef.trim();
+  if (!trimmed) {
+    throw new Error("empty audio reference");
+  }
+
+  const localPath = resolveExistingLocalPath(trimmed);
+  if (localPath) {
+    await fs.access(localPath);
+    return localPath;
+  }
+
+  if (AUDIO_DATA_URL_PATTERN.test(trimmed)) {
+    return persistDataUrlAudio(trimmed, requestId);
+  }
+
+  if (HTTP_URL_PATTERN.test(trimmed)) {
+    return persistRemoteAudio(trimmed, requestId);
+  }
+
+  if (isLikelyRawBase64(trimmed)) {
+    return persistRawBase64Audio(trimmed, requestId);
+  }
+
+  throw new Error("unsupported audio reference format");
 }
 
 function resolvePluginRoot(api: OpenClawPluginApiLike): string {
@@ -423,6 +569,7 @@ function mergePluginConfigInput(
       retry: mergeNestedRecord(base.retry, undefined),
       providers: mergeProviderConfigs(base.providers, undefined),
       proactiveSelfie: mergeNestedRecord(base.proactiveSelfie, undefined),
+      tts: mergeNestedRecord(base.tts, undefined),
     };
   }
 
@@ -433,6 +580,7 @@ function mergePluginConfigInput(
     retry: mergeNestedRecord(base.retry, override.retry),
     providers: mergeProviderConfigs(base.providers, override.providers),
     proactiveSelfie: mergeNestedRecord(base.proactiveSelfie, override.proactiveSelfie),
+    tts: mergeNestedRecord(base.tts, override.tts),
   };
 }
 
@@ -485,6 +633,15 @@ function resolveRuntimeConfig(
       }
     },
     proactiveSelfie: { enabled: false, probability: 0.1 },
+    tts: {
+      enabled: false,
+      model: "qwen3-tts-flash",
+      voice: "Chelsie",
+      languageType: "Chinese",
+      apiKeyEnv: "DASHSCOPE_API_KEY",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      degradeMessage: "语音暂时发送失败，我先打字陪你。",
+    },
   };
 
   const { agents: _agents, ...globalOverrides } = pluginConfig;
@@ -574,6 +731,28 @@ async function formatResult(result: GenerateSelfieResult, logger: ReturnType<typ
   });
 }
 
+async function formatTtsResult(result: GenerateTtsResult): Promise<string> {
+  if (result.ok) {
+    const audioPath = await persistAudioToLocal(result.audioUrl, result.requestId);
+    return JSON.stringify({
+      ok: true,
+      audioPath,
+      mediaLine: `MEDIA: ${audioPath}`,
+      requestId: result.requestId,
+      model: result.model,
+      voice: result.voice,
+    });
+  }
+
+  const failure = result as GenerateTtsFailure;
+  return JSON.stringify({
+    ok: false,
+    message: failure.message,
+    error: failure.error,
+    requestId: failure.requestId ?? null,
+  });
+}
+
 export default function registerClawMateCompanion(api: OpenClawPluginApiLike): void {
   const pluginRoot = resolvePluginRoot(api);
   const logger = createLogger("clawmate-plugin", { useStderr: true });
@@ -595,6 +774,11 @@ export default function registerClawMateCompanion(api: OpenClawPluginApiLike): v
       // 静态人格一次性落盘到 SOUL.md（已注入则自动跳过）
       await ensurePersonaInjectedToSoul(config.selectedCharacter, personaText, logger, ctx.workspaceDir);
 
+      const prependContexts: string[] = [];
+      if (config.tts.enabled) {
+        prependContexts.push("当某条回复更适合用短语音表达时，可使用 clawmate-companion-tts skill。发语音时不要重复发送同内容文字。");
+      }
+
       // Level 2: 随机触发主动发图
       if (config.proactiveSelfie.enabled && Math.random() < config.proactiveSelfie.probability) {
         logger.info("proactiveSelfie 触发", {
@@ -602,8 +786,12 @@ export default function registerClawMateCompanion(api: OpenClawPluginApiLike): v
           agentId: ctx.agentId,
           workspaceDir: ctx.workspaceDir,
         });
+        prependContexts.push("结合当前对话内容和用户的状态，在回应用户之后，使用 clawmate-companion-selfie skill 生成一张自拍表示关心。");
+      }
+
+      if (prependContexts.length > 0) {
         return {
-          prependContext: "结合当前对话内容和用户的状态，在回应用户之后，使用 clawmate-companion-selfie skill 生成一张自拍表示关心。",
+          prependContext: prependContexts.join("\n"),
         };
       }
     } catch (error) {
@@ -754,6 +942,65 @@ export default function registerClawMateCompanion(api: OpenClawPluginApiLike): v
             requestId: result.ok ? result.requestId ?? null : null,
             message: config.degradeMessage,
             error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text,
+            },
+          ],
+        };
+      },
+    };
+
+    const generateTtsTool: OpenClawPluginToolLike<ToolParams> = {
+      name: "clawmate_generate_tts",
+      description: "接收适合口播的短文本，调用阿里云千问 TTS 生成语音并返回本地媒体路径",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["text"],
+        properties: {
+          text: { type: "string", description: "适合口播的短文本（必填）" },
+        },
+      },
+      async execute(_toolCallId: string, params: ToolParams) {
+        const config = getConfig();
+        let result: GenerateTtsResult;
+        try {
+          result = await generateTts({
+            text: params.text ?? "",
+            config,
+          });
+        } catch (error) {
+          result = {
+            ok: false,
+            message: config.tts.degradeMessage,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+
+        let text: string;
+        try {
+          text = await formatTtsResult(result);
+        } catch (error) {
+          const remoteAudioUrl =
+            result.ok && HTTP_URL_PATTERN.test(result.audioUrl.trim()) ? result.audioUrl.trim() : null;
+          logger.error("语音本地化失败", {
+            requestId: result.ok ? result.requestId ?? null : null,
+            audioUrl: remoteAudioUrl,
+            message: error instanceof Error ? error.message : String(error),
+            agentId: toolScope.agentId,
+            sessionId: toolScope.sessionId,
+          });
+          text = JSON.stringify({
+            ok: false,
+            message: config.tts.degradeMessage,
+            error: error instanceof Error ? error.message : String(error),
+            requestId: result.ok ? result.requestId ?? null : null,
           });
         }
 
@@ -994,6 +1241,6 @@ export default function registerClawMateCompanion(api: OpenClawPluginApiLike): v
       },
     };
 
-    return [prepareSelfieTool, generateSelfieTool, prepareCharacterTool, createCharacterTool];
+    return [prepareSelfieTool, generateSelfieTool, generateTtsTool, prepareCharacterTool, createCharacterTool];
   });
 }

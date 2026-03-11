@@ -17,6 +17,15 @@
     "enabled": false,
     "probability": 0.1
   },
+  "tts": {
+    "enabled": false,
+    "model": "qwen3-tts-flash",
+    "voice": "Chelsie",
+    "languageType": "Chinese",
+    "apiKeyEnv": "DASHSCOPE_API_KEY",
+    "baseUrl": "https://dashscope.aliyuncs.com/api/v1",
+    "degradeMessage": "语音暂时发送失败，我先打字陪你。"
+  },
   "providers": {
     "mock": {
       "type": "mock",

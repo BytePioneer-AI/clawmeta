@@ -49,6 +49,16 @@ export interface ProactiveSelfieConfig {
   probability: number; // 0-1, per-message trigger probability
 }
 
+export interface TtsConfig {
+  enabled: boolean;
+  model: string;
+  voice: string;
+  languageType: string;
+  apiKeyEnv: string;
+  baseUrl: string;
+  degradeMessage: string;
+}
+
 export interface ClawMateConfig {
   selectedCharacter: string;
   characterRoot: string;
@@ -61,6 +71,7 @@ export interface ClawMateConfig {
   degradeMessage: string;
   providers: ProvidersConfig;
   proactiveSelfie: ProactiveSelfieConfig;
+  tts: TtsConfig;
 }
 
 export interface Logger {
@@ -123,6 +134,23 @@ export interface GenerateSelfieFailure {
 }
 
 export type GenerateSelfieResult = GenerateSelfieSuccess | GenerateSelfieFailure;
+
+export interface GenerateTtsSuccess {
+  ok: true;
+  audioUrl: string;
+  requestId: string | null;
+  model: string;
+  voice: string;
+}
+
+export interface GenerateTtsFailure {
+  ok: false;
+  message: string;
+  error: string;
+  requestId?: string | null;
+}
+
+export type GenerateTtsResult = GenerateTtsSuccess | GenerateTtsFailure;
 
 export interface CreateCharacterMeta {
   id: string;

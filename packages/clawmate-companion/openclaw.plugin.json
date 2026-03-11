@@ -51,6 +51,19 @@
           "probability": { "type": "number", "minimum": 0, "maximum": 1 }
         }
       },
+      "tts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "model": { "type": "string" },
+          "voice": { "type": "string" },
+          "languageType": { "type": "string" },
+          "apiKeyEnv": { "type": "string" },
+          "baseUrl": { "type": "string" },
+          "degradeMessage": { "type": "string" }
+        }
+      },
       "agents": {
         "type": "object",
         "additionalProperties": {
@@ -96,6 +109,19 @@
               "properties": {
                 "enabled": { "type": "boolean" },
                 "probability": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            },
+            "tts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "model": { "type": "string" },
+                "voice": { "type": "string" },
+                "languageType": { "type": "string" },
+                "apiKeyEnv": { "type": "string" },
+                "baseUrl": { "type": "string" },
+                "degradeMessage": { "type": "string" }
               }
             }
           }

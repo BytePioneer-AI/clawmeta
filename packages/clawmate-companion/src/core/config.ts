@@ -2,7 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { ClawMateError } from "./errors";
-import type { ClawMateConfig, FallbackPolicy, ProviderConfig, ProvidersConfig, RetryPolicy, ProactiveSelfieConfig } from "./types";
+import type {
+  ClawMateConfig,
+  FallbackPolicy,
+  ProviderConfig,
+  ProvidersConfig,
+  RetryPolicy,
+  ProactiveSelfieConfig,
+  TtsConfig,
+} from "./types";
 
 const DEFAULT_CHARACTER_ROOT = path.join("skills", "clawmate-companion", "assets", "characters");
 
@@ -79,6 +87,39 @@ function normalizeProactiveSelfie(value: unknown): ProactiveSelfieConfig {
   };
 }
 
+function normalizeTts(value: unknown): TtsConfig {
+  const source = asObject(value);
+  const normalizedBaseUrl =
+    typeof source.baseUrl === "string" && source.baseUrl.trim()
+      ? source.baseUrl.trim().replace(/\/+$/, "")
+      : "https://dashscope.aliyuncs.com/api/v1";
+
+  return {
+    enabled: Boolean(source.enabled),
+    model:
+      typeof source.model === "string" && source.model.trim()
+        ? source.model.trim()
+        : "qwen3-tts-flash",
+    voice:
+      typeof source.voice === "string" && source.voice.trim()
+        ? source.voice.trim()
+        : "Chelsie",
+    languageType:
+      typeof source.languageType === "string" && source.languageType.trim()
+        ? source.languageType.trim()
+        : "Chinese",
+    apiKeyEnv:
+      typeof source.apiKeyEnv === "string" && source.apiKeyEnv.trim()
+        ? source.apiKeyEnv.trim()
+        : "DASHSCOPE_API_KEY",
+    baseUrl: normalizedBaseUrl,
+    degradeMessage:
+      typeof source.degradeMessage === "string" && source.degradeMessage.trim()
+        ? source.degradeMessage.trim()
+        : "语音暂时发送失败，我先打字陪你。",
+  };
+}
+
 export function normalizeConfig(raw: unknown): ClawMateConfig {
   const source = asObject(raw);
   const providers = normalizeProviders(source.providers);
@@ -106,6 +147,7 @@ export function normalizeConfig(raw: unknown): ClawMateConfig {
         : "图片暂时生成失败，我先陪你聊会儿。",
     providers,
     proactiveSelfie: normalizeProactiveSelfie(source.proactiveSelfie),
+    tts: normalizeTts(source.tts),
     userCharacterRoot:
       typeof source.userCharacterRoot === "string" && source.userCharacterRoot
         ? source.userCharacterRoot
