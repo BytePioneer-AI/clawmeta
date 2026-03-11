@@ -55,7 +55,7 @@
     "model": "qwen3-tts-flash",
     "voice": "Chelsie",
     "languageType": "Chinese",
-    "apiKeyEnv": "DASHSCOPE_API_KEY",
+    "apiKey": "YOUR_DASHSCOPE_API_KEY",
     "baseUrl": "https://dashscope.aliyuncs.com/api/v1",
     "degradeMessage": "语音暂时发送失败，我先打字陪你。"
   }
@@ -72,8 +72,8 @@
   - 第一版固定默认 `Chelsie`
 - `languageType`
   - 默认 `Chinese`
-- `apiKeyEnv`
-  - 默认从 `DASHSCOPE_API_KEY` 读取
+- `apiKey`
+  - 直接从插件配置读取 DashScope API Key
 - `baseUrl`
   - 中国内地默认北京 endpoint
 - `degradeMessage`
@@ -121,7 +121,7 @@ clawmate_generate_tts({
    - `voice`
    - `languageType`
    - `baseUrl`
-   - `apiKeyEnv`
+   - `apiKey`
 3. 调用 DashScope / Qwen TTS
 4. 获取返回的远端音频 URL
 5. 下载音频到本地

@@ -53,7 +53,7 @@ async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
-test("resolveRuntimeConfig applies tts defaults and agent overrides", () => {
+test("resolveRuntimeConfig applies direct tts apiKey overrides", () => {
   const api = {
     resolvePath(input: string) {
       return input;
@@ -63,12 +63,13 @@ test("resolveRuntimeConfig applies tts defaults and agent overrides", () => {
         enabled: true,
         model: "qwen3-tts-flash",
         voice: "Chelsie",
+        apiKey: "shared-tts-key",
       },
       agents: {
         "ding-work": {
           tts: {
             voice: "Cherry",
-            apiKeyEnv: "WORK_TTS_KEY",
+            apiKey: "work-tts-key",
           },
         },
       },
@@ -78,13 +79,13 @@ test("resolveRuntimeConfig applies tts defaults and agent overrides", () => {
   const defaultConfig = __testing.resolveRuntimeConfig(api as never, { agentId: "ding-main" });
   assert.equal(defaultConfig.tts.enabled, true);
   assert.equal(defaultConfig.tts.voice, "Chelsie");
-  assert.equal(defaultConfig.tts.apiKeyEnv, "DASHSCOPE_API_KEY");
+  assert.equal(defaultConfig.tts.apiKey, "shared-tts-key");
 
   const workConfig = __testing.resolveRuntimeConfig(api as never, { agentId: "ding-work" });
   assert.equal(workConfig.tts.enabled, true);
   assert.equal(workConfig.tts.model, "qwen3-tts-flash");
   assert.equal(workConfig.tts.voice, "Cherry");
-  assert.equal(workConfig.tts.apiKeyEnv, "WORK_TTS_KEY");
+  assert.equal(workConfig.tts.apiKey, "work-tts-key");
 });
 
 test("before_agent_start adds TTS prependContext when TTS is enabled", async () => {
@@ -126,14 +127,31 @@ test("clawmate_generate_tts returns structured failure when disabled", async () 
   assert.match(payload.error, /TTS_NOT_ENABLED/);
 });
 
+test("clawmate_generate_tts returns structured failure when apiKey is missing", async () => {
+  const plugin = createMockApi({
+    selectedCharacter: "brooke",
+    tts: {
+      enabled: true,
+    },
+  });
+  const toolFactory = plugin.getToolFactory();
+  const tools = toolFactory({ agentId: "ding-main", sessionId: "tts-missing-key" });
+  const ttsTool = tools.find((tool) => tool.name === "clawmate_generate_tts");
+  assert.ok(ttsTool);
+
+  const result = await ttsTool.execute("tool-tts-missing-key", { text: "我想抱抱你。" });
+  const payload = JSON.parse(result.content[0]?.text ?? "{}");
+  assert.equal(payload.ok, false);
+  assert.match(payload.message, /语音暂时发送失败/);
+  assert.match(payload.error, /TTS_API_KEY_MISSING/);
+});
+
 test("clawmate_generate_tts returns local media path on success", async () => {
   const workspaceDir = await makeTempDir("clawmate-tts-success-");
   const previousOpenClawHome = process.env.OPENCLAW_HOME;
-  const previousApiKey = process.env.DASHSCOPE_API_KEY;
   const originalFetch = globalThis.fetch;
 
   process.env.OPENCLAW_HOME = workspaceDir;
-  process.env.DASHSCOPE_API_KEY = "test-key";
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -173,6 +191,7 @@ test("clawmate_generate_tts returns local media path on success", async () => {
       selectedCharacter: "brooke",
       tts: {
         enabled: true,
+        apiKey: "test-key",
       },
     });
 
@@ -204,11 +223,6 @@ test("clawmate_generate_tts returns local media path on success", async () => {
       delete process.env.OPENCLAW_HOME;
     } else {
       process.env.OPENCLAW_HOME = previousOpenClawHome;
-    }
-    if (previousApiKey === undefined) {
-      delete process.env.DASHSCOPE_API_KEY;
-    } else {
-      process.env.DASHSCOPE_API_KEY = previousApiKey;
     }
   }
 });

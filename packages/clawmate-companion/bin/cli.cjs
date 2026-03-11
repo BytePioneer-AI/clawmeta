@@ -72,6 +72,37 @@ const OPENCLAW_CONFIG = path.join(OPENCLAW_DIR, "openclaw.json");
 const OPENCLAW_PLUGINS_DIR = path.join(OPENCLAW_DIR, "plugins");
 const PLUGIN_PACKAGE_ROOT = path.resolve(__dirname, "..");
 const PLUGIN_ID = "clawmate-companion";
+const TTS_DEFAULT_MODEL = "qwen3-tts-flash";
+const TTS_DEFAULT_VOICE = "Chelsie";
+const TTS_DEFAULT_LANGUAGE = "Chinese";
+const TTS_DEFAULT_API_KEY = "";
+const TTS_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
+const TTS_DEFAULT_DEGRADE_MESSAGE = "语音暂时发送失败，我先打字陪你。";
+const TTS_API_KEY_HELP_URL = "https://help.aliyun.com/zh/model-studio/get-api-key";
+const TTS_VOICE_TEST_URL = "https://bailian.console.aliyun.com/cn-beijing/?spm=5176.29597918.J__Xz0dtrgG-8e2H7vxPlPy.9.28c5133cimqlqE&tab=doc#/doc/?type=model&url=2879134";
+
+const TTS_VOICE_PRESETS = [
+  { value: "Chelsie", zh: "Chelsie — 二次元虚拟女友（女性）", en: "Chelsie — anime virtual girlfriend (female)" },
+  { value: "Maia", zh: "Maia — 知性与温柔的碰撞（女性）", en: "Maia — poised and gentle (female)" },
+  { value: "Vivian", zh: "Vivian — 拽拽的、可爱的小暴躁（女性）", en: "Vivian — tsundere and cute (female)" },
+  { value: "Bella", zh: "Bella — 喝酒不打醉拳的小萝莉（女性）", en: "Bella — playful little girl voice (female)" },
+  { value: "Moon", zh: "Moon — 率性帅气的月白（男性）", en: "Moon — confident and cool (male)" },
+  { value: "Kai", zh: "Kai — 耳朵的一场SPA（男性）", en: "Kai — ultra-smooth and soothing (male)" },
+  { value: "Neil", zh: "Neil — 最专业的新闻主持人（男性）", en: "Neil — professional news anchor (male)" },
+];
+
+const TTS_LANGUAGE_OPTIONS = [
+  "Chinese",
+  "English",
+  "German",
+  "Italian",
+  "Portuguese",
+  "Spanish",
+  "Japanese",
+  "Korean",
+  "French",
+  "Russian",
+];
 
 // ── i18n ────────────────────────────────────────────────────────────────────
 let lang = "zh";
@@ -87,6 +118,7 @@ const T = {
     step_agent_status: "设置 Agent 开关...",
     step_character: "选择角色...",
     step_proactive: "配置主动发图...",
+    step_tts: "配置语音合成...",
     proactive_enable: "主动发图：若溪会在日常聊天中随机发自拍表示关心",
     proactive_yes: "开启",
     proactive_no: "关闭（仅用户主动触发）",
@@ -164,15 +196,18 @@ const T = {
     clear_shared_character: "清除共享角色（回退到内置默认）",
     clear_shared_provider: "清除共享图像服务（回退到 Mock）",
     clear_shared_proactive: "清除共享主动发图设置",
+    clear_shared_tts: "清除共享语音设置",
     multi_agent_shared: "配置共享默认值",
     multi_agent_character: "每个 Agent 单独选择角色",
     multi_agent_character_provider: "每个 Agent 单独选择角色和图像服务",
     use_global_character: "继承全局角色",
     use_global_provider: "继承全局图像服务",
     use_global_proactive: "继承共享主动发图",
+    use_global_tts: "继承共享语音",
     choose_agent_character: "为 Agent 选择角色",
     choose_agent_provider: "为 Agent 选择图像服务",
     choose_agent_proactive: "为 Agent 配置主动发图",
+    choose_agent_tts: "为 Agent 配置语音合成",
     multi_agent_shared_done: "将清除 Agent 级覆写，全部继承全局配置",
     multi_agent_configured: "多 Agent 配置已生成",
     configured_services: "已配置图像服务",
@@ -197,6 +232,18 @@ const T = {
     f_model_name: "模型名称",
     f_fal_hint: "从 https://fal.ai/dashboard/keys 获取",
     f_baseurl_hint: "例: https://api.openai.com/v1",
+    tts_enable: "语音合成：在适合的时刻发送短语音",
+    tts_yes: "开启",
+    tts_no: "关闭（仅文字回复）",
+    tts_done: "语音合成配置完成",
+    tts_select_voice: "选择默认音色",
+    tts_custom_voice: "输入自定义音色名称: ",
+    tts_select_language: "选择默认语种",
+    tts_api_key: "输入 TTS API Key",
+    tts_voice_hint: "还有更多可选音色，可以在这个地址在线测试:",
+    tts_api_key_hint: "获取 Key 的链接:",
+    tts_recommended: "推荐",
+    summary_tts: "语音合成:",
   },
   en: {
     banner_desc: "Add character selfie generation to your OpenClaw Agent.",
@@ -208,6 +255,7 @@ const T = {
     step_agent_status: "Set agent status...",
     step_character: "Select character...",
     step_proactive: "Configure proactive selfie...",
+    step_tts: "Configure TTS...",
     proactive_enable: "Proactive selfie: character will randomly send selfies during chat",
     proactive_yes: "Enable",
     proactive_no: "Disable (user-triggered only)",
@@ -285,15 +333,18 @@ const T = {
     clear_shared_character: "Clear shared character (use built-in default)",
     clear_shared_provider: "Clear shared image service (fall back to Mock)",
     clear_shared_proactive: "Clear shared proactive selfie setting",
+    clear_shared_tts: "Clear shared TTS settings",
     multi_agent_shared: "Configure shared defaults",
     multi_agent_character: "Choose a separate character for each agent",
     multi_agent_character_provider: "Choose a separate character and provider for each agent",
     use_global_character: "Inherit global character",
     use_global_provider: "Inherit global provider",
     use_global_proactive: "Inherit shared proactive selfie",
+    use_global_tts: "Inherit shared TTS",
     choose_agent_character: "Choose character for agent",
     choose_agent_provider: "Choose provider for agent",
     choose_agent_proactive: "Configure proactive selfie for agent",
+    choose_agent_tts: "Configure TTS for agent",
     multi_agent_shared_done: "Agent-scoped overrides will be cleared and all agents will inherit the global config",
     multi_agent_configured: "Multi-agent overrides prepared",
     configured_services: "Configured image services",
@@ -318,10 +369,29 @@ const T = {
     f_model_name: "Model name",
     f_fal_hint: "Get from https://fal.ai/dashboard/keys",
     f_baseurl_hint: "e.g. https://api.openai.com/v1",
+    tts_enable: "TTS: send short voice notes when voice feels better than text",
+    tts_yes: "Enable",
+    tts_no: "Disable (text only)",
+    tts_done: "TTS configured",
+    tts_select_voice: "Choose the default voice",
+    tts_custom_voice: "Enter a custom voice name: ",
+    tts_select_language: "Choose the default language",
+    tts_api_key: "Enter the TTS API key",
+    tts_voice_hint: "More voices are available for online preview here:",
+    tts_api_key_hint: "Get the API key:",
+    tts_recommended: "Recommended",
+    summary_tts: "TTS:",
   },
 };
 
 function t(key) { return T[lang][key] || T.zh[key] || key; }
+
+function getTtsVoiceOptions() {
+  return TTS_VOICE_PRESETS.map((item) => ({
+    value: item.value,
+    label: `${lang === "en" ? item.en : item.zh}${item.value === TTS_DEFAULT_VOICE ? (lang === "en" ? ` (${t("tts_recommended")})` : `（${t("tts_recommended")}）`) : ""}`,
+  }));
+}
 
 // ── Provider definitions (dynamic for i18n) ─────────────────────────────────
 function getProviders() {
@@ -751,6 +821,36 @@ function normalizeProactiveSelfieConfig(value) {
   };
 }
 
+function normalizeTtsConfig(value) {
+  return {
+    enabled: Boolean(value?.enabled),
+    model:
+      typeof value?.model === "string" && value.model.trim()
+        ? value.model.trim()
+        : TTS_DEFAULT_MODEL,
+    voice:
+      typeof value?.voice === "string" && value.voice.trim()
+        ? value.voice.trim()
+        : TTS_DEFAULT_VOICE,
+    languageType:
+      typeof value?.languageType === "string" && value.languageType.trim()
+        ? value.languageType.trim()
+        : TTS_DEFAULT_LANGUAGE,
+    apiKey:
+      typeof value?.apiKey === "string" && value.apiKey.trim()
+        ? value.apiKey.trim()
+        : TTS_DEFAULT_API_KEY,
+    baseUrl:
+      typeof value?.baseUrl === "string" && value.baseUrl.trim()
+        ? value.baseUrl.trim()
+        : TTS_DEFAULT_BASE_URL,
+    degradeMessage:
+      typeof value?.degradeMessage === "string" && value.degradeMessage.trim()
+        ? value.degradeMessage.trim()
+        : TTS_DEFAULT_DEGRADE_MESSAGE,
+  };
+}
+
 function formatProactiveSelfieLabel(value) {
   const config = normalizeProactiveSelfieConfig(value);
   if (!config.enabled) {
@@ -764,6 +864,14 @@ function formatProactiveSelfieLabel(value) {
     return `${t("proactive_yes")} (${t("proactive_mid")})`;
   }
   return `${t("proactive_yes")} (${t("proactive_high")})`;
+}
+
+function formatTtsLabel(value) {
+  const config = normalizeTtsConfig(value);
+  if (!config.enabled) {
+    return t("tts_no");
+  }
+  return `${t("tts_yes")} (${config.voice} / ${config.languageType})`;
 }
 
 function getConfiguredProviderEntries(pluginConfig) {
@@ -796,7 +904,8 @@ function hasSharedScopeConfig(pluginConfig) {
   return (
     (typeof existing.selectedCharacter === "string" && existing.selectedCharacter.trim()) ||
     (typeof existing.defaultProvider === "string" && existing.defaultProvider.trim()) ||
-    existing.proactiveSelfie !== undefined
+    existing.proactiveSelfie !== undefined ||
+    existing.tts !== undefined
   );
 }
 
@@ -814,7 +923,8 @@ function hasManagedAgentOverrides(agentConfig) {
     Object.prototype.hasOwnProperty.call(config, "pollTimeoutMs") ||
     Object.prototype.hasOwnProperty.call(config, "degradeMessage") ||
     Object.prototype.hasOwnProperty.call(config, "providers") ||
-    Object.prototype.hasOwnProperty.call(config, "proactiveSelfie")
+    Object.prototype.hasOwnProperty.call(config, "proactiveSelfie") ||
+    Object.prototype.hasOwnProperty.call(config, "tts")
   );
 }
 
@@ -871,6 +981,12 @@ function buildConfigTargetMenu(agents, pluginConfig, allowFinish = false) {
   return { items, values };
 }
 
+function getConfigTargetInitialIndex(menu) {
+  const values = Array.isArray(menu?.values) ? menu.values : [];
+  const finishIndex = values.findIndex((item) => item?.type === "finish");
+  return finishIndex >= 0 ? finishIndex : 0;
+}
+
 function buildConfigTargetDetails(agents, selection) {
   if (!selection || selection.type !== "agent") {
     return [];
@@ -902,12 +1018,14 @@ function getSharedScopeDefaults(pluginConfig) {
         ? existing.defaultProvider.trim()
         : "mock",
     proactiveSelfie: normalizeProactiveSelfieConfig(existing.proactiveSelfie),
+    tts: normalizeTtsConfig(existing.tts),
     configured: {
       selectedCharacter:
         typeof existing.selectedCharacter === "string" && existing.selectedCharacter.trim().length > 0,
       defaultProvider:
         typeof existing.defaultProvider === "string" && existing.defaultProvider.trim().length > 0,
       proactiveSelfie: existing.proactiveSelfie !== undefined,
+      tts: existing.tts !== undefined,
     },
   };
 }
@@ -922,6 +1040,7 @@ function resolveScopeSettings(pluginConfig, scope) {
       currentCharacterId: shared.selectedCharacter,
       currentProviderKey: shared.defaultProvider,
       currentProactiveSelfie: shared.proactiveSelfie,
+      currentTts: shared.tts,
       shared,
       overrides: {},
     };
@@ -942,6 +1061,10 @@ function resolveScopeSettings(pluginConfig, scope) {
       agentConfig.proactiveSelfie !== undefined
         ? normalizeProactiveSelfieConfig(agentConfig.proactiveSelfie)
         : shared.proactiveSelfie,
+    currentTts:
+      agentConfig.tts !== undefined
+        ? normalizeTtsConfig(agentConfig.tts)
+        : shared.tts,
     shared,
     agentConfigured: hasManagedAgentOverrides(agentConfig),
     agentEnabled: isManagedAgentEnabled(agentConfig),
@@ -1041,7 +1164,7 @@ ${t("banner_desc")}
 
 // ── Step 1: Prerequisites ───────────────────────────────────────────────────
 async function checkPrerequisites() {
-  logStep("1/6", t("step_env"));
+  logStep("1/8", t("step_env"));
 
   if (!commandExists("openclaw")) {
     logError(t("no_openclaw"));
@@ -1116,13 +1239,13 @@ async function chooseConfigTarget(agents, pluginConfig, options = {}) {
     return { type: "shared" };
   }
 
-  logStep("2/6", t("step_target"));
+  logStep("2/8", t("step_target"));
   logInfo(t("choose_agent_only"));
 
   const menu = buildConfigTargetMenu(agents, pluginConfig, options.allowFinish);
   const selectedIndex = await arrowSelect(menu.items, {
     title: `  ${c("dim", t("arrow_hint"))}`,
-    initialIndex: menu.values[0]?.type === "finish" ? 1 : 0,
+    initialIndex: getConfigTargetInitialIndex(menu),
     detailsRenderer: (index) => buildConfigTargetDetails(agents, menu.values[index]),
   });
 
@@ -1149,7 +1272,7 @@ async function chooseAgentActivation(scope, settings) {
     return { mode: "enable" };
   }
 
-  logStep("2.5/6", t("step_agent_status"));
+  logStep("2.5/8", t("step_agent_status"));
 
   const items = [
     `${t("agent_enable")}${settings.agentEnabled ? currentTag() : ""}`,
@@ -1172,7 +1295,7 @@ async function chooseAgentActivation(scope, settings) {
 }
 
 async function chooseCharacterSelection(scope, settings) {
-  logStep("3/6", t("step_character"));
+  logStep("3/8", t("step_character"));
   logInfo(t("character_create_hint"));
 
   const characters = loadCharacters();
@@ -1241,7 +1364,7 @@ async function chooseCharacterSelection(scope, settings) {
 }
 
 async function configureProactiveSelfieSelection(scope, settings) {
-  logStep("4/6", t("step_proactive"));
+  logStep("4/8", t("step_proactive"));
   logInfo(t("proactive_enable"));
 
   const allowInherit = scope?.type === "agent" && settings.shared.configured.proactiveSelfie;
@@ -1315,6 +1438,128 @@ async function configureProactiveSelfieSelection(scope, settings) {
 
   const result = { mode: "set", value: { enabled: true, probability: freqValues[freqIndex] } };
   logSuccess(`${t("proactive_done")} (${result.value.probability})`);
+  return result;
+}
+
+async function configureTtsSelection(scope, settings) {
+  logStep("5/8", t("step_tts"));
+  logInfo(t("tts_enable"));
+
+  const allowInherit = scope?.type === "agent" && settings.shared.configured.tts;
+  const current = normalizeTtsConfig(settings.currentTts);
+  const shared = normalizeTtsConfig(settings.shared.tts);
+  const values = [];
+  const items = [];
+
+  if (allowInherit) {
+    items.push(`${t("use_global_tts")}: ${formatTtsLabel(shared)}${settings.overrides.tts === undefined ? currentTag() : ""}`);
+    values.push({ mode: "inherit" });
+  }
+
+  if (scope?.type === "shared" && settings.shared.configured.tts) {
+    items.push(t("clear_shared_tts"));
+    values.push({ mode: "clear" });
+  }
+
+  items.push(`${t("tts_no")}${!current.enabled && (!allowInherit || settings.overrides.tts !== undefined) ? currentTag() : ""}`);
+  values.push({ mode: "set", value: { enabled: false } });
+
+  items.push(`${t("tts_yes")}${current.enabled ? currentTag() : ""}`);
+  values.push({ mode: "enable" });
+
+  items.push(c("dim", `↩  ${t("skip")}`));
+  values.push({ mode: "skip" });
+
+  const initialIndex = Math.max(0, values.findIndex((item) => {
+    if (item.mode === "inherit") {
+      return settings.overrides.tts === undefined;
+    }
+    if (item.mode === "set") {
+      return !current.enabled;
+    }
+    if (item.mode === "enable") {
+      return current.enabled;
+    }
+    return false;
+  }));
+
+  const selectionIndex = await arrowSelect(items, {
+    title: `  ${c("dim", t("arrow_hint"))}`,
+    initialIndex,
+  });
+
+  const selection = values[selectionIndex] || { mode: "skip" };
+  if (selection.mode === "skip" || selection.mode === "inherit" || selection.mode === "set" || selection.mode === "clear") {
+    if (selection.mode === "inherit") {
+      logSuccess(`${t("selected")} ${t("use_global_tts")}`);
+    } else if (selection.mode === "clear") {
+      logSuccess(`${t("selected")} ${t("clear_shared_tts")}`);
+    } else if (selection.mode === "set") {
+      logSuccess(`${t("selected")} ${t("tts_no")}`);
+    } else {
+      logInfo(t("skipped"));
+    }
+    return selection;
+  }
+
+  const voiceOptions = getTtsVoiceOptions();
+  const voiceItems = voiceOptions.map((item) => `${item.label}${item.value === current.voice ? currentTag() : ""}`);
+  voiceItems.push(t("custom_input"));
+
+  const currentVoiceIndex = voiceOptions.findIndex((item) => item.value === current.voice);
+  const selectedVoiceIndex = await arrowSelect(voiceItems, {
+    title: `  ${t("tts_select_voice")}\n  ${c("dim", t("arrow_hint"))}`,
+    initialIndex: currentVoiceIndex >= 0 ? currentVoiceIndex : 0,
+    detailsRenderer: () => [
+      `  ${c("yellow", t("tts_voice_hint"))}`,
+      `  ${c("cyan", c("bright", TTS_VOICE_TEST_URL))}`,
+    ],
+  });
+
+  let voice = current.voice;
+  if (selectedVoiceIndex === voiceOptions.length) {
+    const customVoice = await ask(`  ${t("tts_custom_voice")}`);
+    if (!customVoice) {
+      logError(`${t("tts_select_voice")} ${t("field_required")}`);
+      return null;
+    }
+    voice = customVoice;
+  } else {
+    voice = voiceOptions[selectedVoiceIndex].value;
+  }
+  logSuccess(`${t("selected")} ${voice}`);
+
+  const languageItems = TTS_LANGUAGE_OPTIONS.map((item) => `${item}${item === current.languageType ? currentTag() : ""}`);
+  const currentLanguageIndex = Math.max(0, TTS_LANGUAGE_OPTIONS.indexOf(current.languageType));
+  const languageIndex = await arrowSelect(languageItems, {
+    title: `  ${t("tts_select_language")}\n  ${c("dim", t("arrow_hint"))}`,
+    initialIndex: currentLanguageIndex,
+  });
+  const languageType = TTS_LANGUAGE_OPTIONS[languageIndex];
+  logSuccess(`${t("selected")} ${languageType}`);
+
+  logInfo(`${t("tts_api_key_hint")} ${TTS_API_KEY_HELP_URL}`);
+  const currentApiKeyTag = current.apiKey ? ` ${c("green", "[****]")}` : "";
+  const apiKeyInput = await ask(`  ${t("tts_api_key")}${currentApiKeyTag}: `);
+  const apiKey = apiKeyInput || current.apiKey;
+  if (!apiKey) {
+    logError(`${t("tts_api_key")} ${t("field_required")}`);
+    return null;
+  }
+
+  const result = {
+    mode: "set",
+    value: {
+      enabled: true,
+      model: TTS_DEFAULT_MODEL,
+      voice,
+      languageType,
+      apiKey,
+      baseUrl: TTS_DEFAULT_BASE_URL,
+      degradeMessage: TTS_DEFAULT_DEGRADE_MESSAGE,
+    },
+  };
+  logSuccess(`${t("tts_done")} (${voice} / ${languageType})`);
   return result;
 }
 
@@ -1414,7 +1659,7 @@ async function collectProviderConfig(providerKey, existingProviderConfig = {}) {
 }
 
 async function chooseProviderSelection(scope, pluginConfig, settings) {
-  logStep("5/6", t("step_provider"));
+  logStep("6/8", t("step_provider"));
   logInfo(t("provider_recommend"));
 
   const configuredProviders = getConfiguredProviderEntries(pluginConfig);
@@ -1501,6 +1746,7 @@ function clearManagedAgentFields(agentConfig) {
   delete next.selectedCharacter;
   delete next.defaultProvider;
   delete next.proactiveSelfie;
+  delete next.tts;
   return next;
 }
 
@@ -1540,6 +1786,11 @@ function buildPluginConfig(existingConfig, options) {
     } else if (options.proactiveSelection?.mode === "clear") {
       delete nextConfig.proactiveSelfie;
     }
+    if (options.ttsSelection?.mode === "set") {
+      nextConfig.tts = options.ttsSelection.value;
+    } else if (options.ttsSelection?.mode === "clear") {
+      delete nextConfig.tts;
+    }
 
     return nextConfig;
   }
@@ -1567,6 +1818,12 @@ function buildPluginConfig(existingConfig, options) {
       currentOverride.proactiveSelfie = options.proactiveSelection.value;
     }
 
+    if (options.ttsSelection?.mode === "inherit") {
+      delete currentOverride.tts;
+    } else if (options.ttsSelection?.mode === "set") {
+      currentOverride.tts = options.ttsSelection.value;
+    }
+
     if (Object.keys(currentOverride).length > 0) {
       nextAgents[options.scope.agentId] = currentOverride;
     } else {
@@ -1585,7 +1842,7 @@ function buildPluginConfig(existingConfig, options) {
 
 // ── Step 4: Install plugin ──────────────────────────────────────────────────
 async function installPlugin(pluginConfig) {
-  logStep("5/6", t("step_install"));
+  logStep("7/8", t("step_install"));
   fs.mkdirSync(pluginConfig.userCharacterRoot, { recursive: true });
 
   // If running from npx temp dir, copy plugin to persistent location
@@ -1628,10 +1885,11 @@ async function installPlugin(pluginConfig) {
 
 // ── Step 5: Summary ─────────────────────────────────────────────────────────
 function printSummary(pluginConfig, pluginPath, scope) {
-  logStep("6/6", t("step_done"));
+  logStep("8/8", t("step_done"));
 
   const settings = resolveScopeSettings(pluginConfig, scope);
   const providerLabel = getProviderLabel(settings.currentProviderKey);
+  const ttsLabel = formatTtsLabel(settings.currentTts);
   const targetLabel = getScopeTargetLabel(scope);
 
   console.log(`
@@ -1644,6 +1902,9 @@ ${c("cyan", t("summary_path"))}
 
 ${c("cyan", t("summary_provider"))}
   ${providerLabel}
+
+${c("cyan", t("summary_tts"))}
+  ${ttsLabel}
 
 ${c("cyan", t("summary_target"))}
   ${targetLabel}
@@ -1690,7 +1951,7 @@ async function main() {
       }
     }
 
-    logStep("1.5/6", t("step_agents"));
+    logStep("1.5/8", t("step_agents"));
     const discoveredAgents = discoverAgents();
     logSuccess(replacePlaceholders(t("agents_found"), { count: discoveredAgents.length }));
 
@@ -1727,6 +1988,10 @@ async function main() {
 
       const characterSelection = await chooseCharacterSelection(scope, settings);
       const proactiveSelection = await configureProactiveSelfieSelection(scope, settings);
+      const ttsSelection = await configureTtsSelection(scope, settings);
+      if (!ttsSelection) {
+        process.exit(1);
+      }
       const providerResult = await chooseProviderSelection(scope, workingConfig, settings);
       if (!providerResult) {
         process.exit(1);
@@ -1737,6 +2002,7 @@ async function main() {
         activationSelection,
         characterSelection,
         proactiveSelection,
+        ttsSelection,
         providerSelection: providerResult.selection,
         providerConfigs: providerResult.providerConfigs,
         defaultUserCharacterRoot: path.join(OPENCLAW_HOME, "clawmeta"),
@@ -1767,6 +2033,7 @@ module.exports = {
   __testing: {
     buildPluginConfig,
     buildConfigTargetMenu,
+    getConfigTargetInitialIndex,
     buildConfigTargetDetails,
     hasConfiguredAgentScopes,
     hasConfiguredScopes,

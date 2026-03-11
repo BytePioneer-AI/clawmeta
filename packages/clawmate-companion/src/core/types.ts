@@ -54,7 +54,7 @@ export interface TtsConfig {
   model: string;
   voice: string;
   languageType: string;
-  apiKeyEnv: string;
+  apiKey: string;
   baseUrl: string;
   degradeMessage: string;
 }

@@ -202,7 +202,7 @@ Add a new top-level config object:
     "model": "qwen3-tts-flash",
     "voice": "Chelsie",
     "languageType": "Chinese",
-    "apiKeyEnv": "DASHSCOPE_API_KEY",
+    "apiKey": "YOUR_DASHSCOPE_API_KEY",
     "baseUrl": "https://dashscope.aliyuncs.com/api/v1",
     "degradeMessage": "语音暂时发送失败，我先打字陪你。"
   }
@@ -212,7 +212,7 @@ Add a new top-level config object:
 ### Required Behavior
 
 - `enabled=false` 时，不注册任何主动 TTS 引导行为，但工具仍可选择直接返回不可用错误
-- `apiKeyEnv` 未读取到值时，工具返回失败结构，不抛未处理异常
+- `apiKey` 未配置时，工具返回失败结构，不抛未处理异常
 - agent-level config override 与 selfie 配置一样支持覆盖 `tts`
 
 ## Tool Spec
@@ -239,7 +239,7 @@ Add a new top-level config object:
 
 1. Resolve runtime config
 2. Validate `tts.enabled`
-3. Read API key from `process.env[apiKeyEnv]`
+3. Read API key from `tts.apiKey`
 4. Call DashScope HTTP API
 5. Extract remote audio URL
 6. Download audio to local filesystem

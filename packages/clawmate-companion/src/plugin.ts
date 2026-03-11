@@ -38,7 +38,7 @@ interface PluginConfigOverrideInput {
     model?: string;
     voice?: string;
     languageType?: string;
-    apiKeyEnv?: string;
+    apiKey?: string;
     baseUrl?: string;
     degradeMessage?: string;
   };
@@ -716,7 +716,7 @@ function resolveRuntimeConfig(
       model: "qwen3-tts-flash",
       voice: "Chelsie",
       languageType: "Chinese",
-      apiKeyEnv: "DASHSCOPE_API_KEY",
+      apiKey: "",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       degradeMessage: "语音暂时发送失败，我先打字陪你。",
     },

@@ -28,12 +28,12 @@ export async function generateTts(options: GenerateTtsOptions): Promise<Generate
     };
   }
 
-  const apiKey = process.env[config.tts.apiKeyEnv]?.trim() ?? "";
+  const apiKey = config.tts.apiKey.trim();
   if (!apiKey) {
     return {
       ok: false,
       message: config.tts.degradeMessage,
-      error: `TTS_API_KEY_MISSING:${config.tts.apiKeyEnv}`,
+      error: "TTS_API_KEY_MISSING",
     };
   }
 

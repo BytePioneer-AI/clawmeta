@@ -42,6 +42,10 @@ function toFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizeText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function normalizeFallback(fallback: unknown): FallbackPolicy {
   const source = asObject(fallback);
   const orderSource = source.order;
@@ -108,10 +112,7 @@ function normalizeTts(value: unknown): TtsConfig {
       typeof source.languageType === "string" && source.languageType.trim()
         ? source.languageType.trim()
         : "Chinese",
-    apiKeyEnv:
-      typeof source.apiKeyEnv === "string" && source.apiKeyEnv.trim()
-        ? source.apiKeyEnv.trim()
-        : "DASHSCOPE_API_KEY",
+    apiKey: normalizeText(source.apiKey),
     baseUrl: normalizedBaseUrl,
     degradeMessage:
       typeof source.degradeMessage === "string" && source.degradeMessage.trim()

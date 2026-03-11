@@ -22,6 +22,12 @@ test("hasConfiguredScopes counts shared defaults and agent enable/disable states
     selectedCharacter: "brooke-anime",
   }), true);
   assert.equal(__testing.hasConfiguredScopes({
+    tts: {
+      enabled: true,
+      voice: "Chelsie",
+    },
+  }), true);
+  assert.equal(__testing.hasConfiguredScopes({
     agents: {
       "ding-main": {
         enabled: true,
@@ -48,6 +54,12 @@ test("hasConfiguredAgentScopes ignores shared defaults and only counts agent ent
   assert.equal(__testing.hasConfiguredAgentScopes({}), false);
   assert.equal(__testing.hasConfiguredAgentScopes({
     selectedCharacter: "brooke-anime",
+  }), false);
+  assert.equal(__testing.hasConfiguredAgentScopes({
+    tts: {
+      enabled: true,
+      voice: "Chelsie",
+    },
   }), false);
   assert.equal(__testing.hasConfiguredAgentScopes({
     agents: {
@@ -116,6 +128,25 @@ test("buildConfigTargetMenu hides shared target when multiple agents exist", () 
   assert.equal(menu.values.some((item) => item.type === "shared"), false);
 });
 
+test("getConfigTargetInitialIndex prefers finish when it is available", () => {
+  const agents = [
+    { id: "main", workspace: "C:\\main", routes: [], bindings: undefined, isDefault: true },
+    { id: "ding-main", workspace: "C:\\ding-main", routes: [], bindings: undefined, isDefault: false },
+  ];
+
+  const withFinish = __testing.buildConfigTargetMenu(agents, {
+    agents: {
+      main: {
+        enabled: true,
+      },
+    },
+  }, true);
+  const withoutFinish = __testing.buildConfigTargetMenu(agents, {}, false);
+
+  assert.equal(__testing.getConfigTargetInitialIndex(withFinish), 0);
+  assert.equal(__testing.getConfigTargetInitialIndex(withoutFinish), 0);
+});
+
 test("buildConfigTargetDetails only shows the selected agent details", () => {
   const agents = [
     {
@@ -147,10 +178,20 @@ test("resolveScopeSettings marks shared fields as unconfigured on fresh install"
     selectedCharacter: false,
     defaultProvider: false,
     proactiveSelfie: false,
+    tts: false,
   });
   assert.equal(result.currentCharacterId, "brooke");
   assert.equal(result.currentProviderKey, "mock");
   assert.deepEqual(result.currentProactiveSelfie, { enabled: false, probability: 0.1 });
+  assert.deepEqual(result.currentTts, {
+    enabled: false,
+    model: "qwen3-tts-flash",
+    voice: "Chelsie",
+    languageType: "Chinese",
+    apiKey: "",
+    baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+    degradeMessage: "语音暂时发送失败，我先打字陪你。",
+  });
 });
 
 test("resolveScopeSettings marks shared fields as configured when explicit shared config exists", () => {
@@ -158,12 +199,14 @@ test("resolveScopeSettings marks shared fields as configured when explicit share
     selectedCharacter: "brooke-anime",
     defaultProvider: "openai-compatible",
     proactiveSelfie: { enabled: true, probability: 0.2 },
+    tts: { enabled: true, voice: "Maia", languageType: "English" },
   }, { type: "agent", agentId: "ding-main" });
 
   assert.deepEqual(result.shared.configured, {
     selectedCharacter: true,
     defaultProvider: true,
     proactiveSelfie: true,
+    tts: true,
   });
 });
 
@@ -172,6 +215,7 @@ test("buildPluginConfig applies shared defaults without changing agent overrides
     selectedCharacter: "brooke",
     defaultProvider: "openai-compatible",
     proactiveSelfie: { enabled: false, probability: 0.1 },
+    tts: { enabled: true, voice: "Chelsie", languageType: "Chinese", apiKey: "shared-tts-key" },
     providers: {
       "openai-compatible": { type: "openai-compatible", model: "gemini-imagen" },
     },
@@ -180,6 +224,7 @@ test("buildPluginConfig applies shared defaults without changing agent overrides
         selectedCharacter: "brooke-anime",
         defaultProvider: "aliyun",
         proactiveSelfie: { enabled: true, probability: 0.3 },
+        tts: { enabled: false },
         note: "keep-me",
       },
     },
@@ -187,6 +232,15 @@ test("buildPluginConfig applies shared defaults without changing agent overrides
     scope: { type: "shared" },
     characterSelection: { mode: "set", value: "brooke-anime" },
     proactiveSelection: { mode: "set", value: { enabled: true, probability: 0.2 } },
+    ttsSelection: { mode: "set", value: {
+      enabled: true,
+      model: "qwen3-tts-flash",
+      voice: "Maia",
+      languageType: "English",
+      apiKey: "work-tts-key",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      degradeMessage: "语音暂时发送失败，我先打字陪你。",
+    } },
     providerSelection: { mode: "set", providerKey: "aliyun" },
     providerConfigs: {
       aliyun: { type: "aliyun", model: "wan2.6-image" },
@@ -197,6 +251,15 @@ test("buildPluginConfig applies shared defaults without changing agent overrides
   assert.equal(result.selectedCharacter, "brooke-anime");
   assert.equal(result.defaultProvider, "aliyun");
   assert.deepEqual(result.proactiveSelfie, { enabled: true, probability: 0.2 });
+  assert.deepEqual(result.tts, {
+    enabled: true,
+    model: "qwen3-tts-flash",
+    voice: "Maia",
+    languageType: "English",
+    apiKey: "work-tts-key",
+    baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+    degradeMessage: "语音暂时发送失败，我先打字陪你。",
+  });
   assert.deepEqual(result.providers, {
     "openai-compatible": { type: "openai-compatible", model: "gemini-imagen" },
     aliyun: { type: "aliyun", model: "wan2.6-image" },
@@ -206,6 +269,7 @@ test("buildPluginConfig applies shared defaults without changing agent overrides
       selectedCharacter: "brooke-anime",
       defaultProvider: "aliyun",
       proactiveSelfie: { enabled: true, probability: 0.3 },
+      tts: { enabled: false },
       note: "keep-me",
     },
   });
@@ -217,6 +281,7 @@ test("buildPluginConfig can clear shared defaults without removing provider defi
     selectedCharacter: "brooke",
     defaultProvider: "openai-compatible",
     proactiveSelfie: { enabled: true, probability: 0.2 },
+    tts: { enabled: true, voice: "Chelsie" },
     providers: {
       "openai-compatible": { type: "openai-compatible", model: "gemini-imagen" },
     },
@@ -229,6 +294,7 @@ test("buildPluginConfig can clear shared defaults without removing provider defi
     scope: { type: "shared" },
     characterSelection: { mode: "clear" },
     proactiveSelection: { mode: "clear" },
+    ttsSelection: { mode: "clear" },
     providerSelection: { mode: "clear" },
     providerConfigs: {},
     defaultUserCharacterRoot: "C:\\Users\\tester\\.openclaw\\clawmeta",
@@ -237,6 +303,7 @@ test("buildPluginConfig can clear shared defaults without removing provider defi
   assert.equal("selectedCharacter" in result, false);
   assert.equal("defaultProvider" in result, false);
   assert.equal("proactiveSelfie" in result, false);
+  assert.equal("tts" in result, false);
   assert.deepEqual(result.providers, {
     "openai-compatible": { type: "openai-compatible", model: "gemini-imagen" },
   });
@@ -252,6 +319,7 @@ test("buildPluginConfig updates only the selected agent overrides", () => {
     selectedCharacter: "brooke",
     defaultProvider: "openai-compatible",
     proactiveSelfie: { enabled: false, probability: 0.1 },
+    tts: { enabled: true, voice: "Chelsie", languageType: "Chinese", apiKey: "shared-tts-key" },
     agents: {
       main: {
         selectedCharacter: "legacy-main",
@@ -261,12 +329,22 @@ test("buildPluginConfig updates only the selected agent overrides", () => {
         selectedCharacter: "legacy-work",
         defaultProvider: "aliyun",
         proactiveSelfie: { enabled: true, probability: 0.3 },
+        tts: { enabled: false },
       },
     },
   }, {
     scope: { type: "agent", agentId: "ding-work" },
     characterSelection: { mode: "set", value: "brooke-anime" },
     proactiveSelection: { mode: "set", value: { enabled: true, probability: 0.2 } },
+    ttsSelection: { mode: "set", value: {
+      enabled: true,
+      model: "qwen3-tts-flash",
+      voice: "Neil",
+      languageType: "English",
+      apiKey: "work-tts-key",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      degradeMessage: "语音暂时发送失败，我先打字陪你。",
+    } },
     providerSelection: { mode: "set", providerKey: "fal" },
     providerConfigs: {
       fal: { type: "fal", model: "fal-ai/flux/dev/image-to-image" },
@@ -284,6 +362,15 @@ test("buildPluginConfig updates only the selected agent overrides", () => {
       selectedCharacter: "brooke-anime",
       defaultProvider: "fal",
       proactiveSelfie: { enabled: true, probability: 0.2 },
+      tts: {
+        enabled: true,
+        model: "qwen3-tts-flash",
+        voice: "Neil",
+        languageType: "English",
+        apiKey: "work-tts-key",
+        baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+        degradeMessage: "语音暂时发送失败，我先打字陪你。",
+      },
     },
   });
   assert.deepEqual(result.providers, {

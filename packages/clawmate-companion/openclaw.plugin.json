@@ -59,7 +59,7 @@
           "model": { "type": "string" },
           "voice": { "type": "string" },
           "languageType": { "type": "string" },
-          "apiKeyEnv": { "type": "string" },
+          "apiKey": { "type": "string" },
           "baseUrl": { "type": "string" },
           "degradeMessage": { "type": "string" }
         }
@@ -120,7 +120,7 @@
                 "model": { "type": "string" },
                 "voice": { "type": "string" },
                 "languageType": { "type": "string" },
-                "apiKeyEnv": { "type": "string" },
+                "apiKey": { "type": "string" },
                 "baseUrl": { "type": "string" },
                 "degradeMessage": { "type": "string" }
               }
