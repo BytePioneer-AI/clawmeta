@@ -65,6 +65,10 @@
   <sub>不同时间状态和场景下的自动生成效果</sub>
 </div>
 
+<img width="1583" height="877" alt="image" src="https://github.com/user-attachments/assets/48d58c79-8de3-45c9-920c-1ba348678855" />
+
+<img width="1594" height="880" alt="image" src="https://github.com/user-attachments/assets/fd103615-f9ba-4197-ac73-c3bd2a0c63fd" />
+
 
 ---
 
